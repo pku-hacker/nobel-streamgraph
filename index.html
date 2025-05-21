@@ -75,7 +75,7 @@
 
     let data, allYears, allKeywords;
 
-    d3.json("streamgraph_chemistry_swapped.json").then(rawData => {
+    d3.json("./streamgraph_chemistry_swapped.json").then(rawData => {
       data = rawData;
       drawGraph("All");
 
