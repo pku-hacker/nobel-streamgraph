@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>按领域划分的关键词流图</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+    }
+    select {
+      margin-bottom: 20px;
+      padding: 5px 10px;
+    }
+    svg {
+      width: 100%;
+      height: 600px;
+    }
+    .legend {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+    }
+    .legend-color {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+    .tooltip {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+  </style>
+</head>
+<body>
+  <h2>按领域划分的关键词流图</h2>
+  <label for="fieldSelect">选择领域：</label>
+  <select id="fieldSelect">
+    <option value="All">全部</option>
+    <option value="Physics">物理</option>
+    <option value="Chemistry">化学</option>
+    <option value="Medicine">医学</option>
+  </select>
+  <svg></svg>
+  <div class="legend" id="legend"></div>
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    const svg = d3.select("svg"),
+          width = window.innerWidth,
+          height = 600,
+          margin = {top: 20, right: 40, bottom: 30, left: 60};
+
+    const x = d3.scaleLinear().range([margin.left, width - margin.right]);
+    const y = d3.scaleLinear().range([height - margin.bottom, margin.top]);
+    const color = d3.scaleOrdinal(d3.schemeTableau10);
+
+    const tooltip = d3.select("#tooltip");
+
+    let data, allYears, allKeywords;
+
+    d3.json("streamgraph_chemistry_swapped.json").then(rawData => {
+      data = rawData;
+      drawGraph("All");
+
+      d3.select("#fieldSelect").on("change", function() {
+        const selectedField = this.value;
+        svg.selectAll("path").remove();
+        svg.selectAll("g").remove();
+        drawGraph(selectedField);
+      });
+    });
+
+    function drawGraph(field) {
+      const filtered = field === "All" ? data : data.filter(d => d.field === field);
+
+      allYears = [...new Set(filtered.map(d => d.year))].sort((a, b) => a - b);
+      allKeywords = [...new Set(filtered.map(d => d.keyword))];
+
+      const yearKeywordMap = {};
+      allYears.forEach(y => {
+        yearKeywordMap[y] = { year: y };
+        allKeywords.forEach(k => yearKeywordMap[y][k] = 0);
+      });
+      filtered.forEach(d => yearKeywordMap[d.year][d.keyword] += d.count);
+
+      const dataset = Object.values(yearKeywordMap);
+      const stack = d3.stack()
+        .keys(allKeywords)
+        .offset(d3.stackOffsetWiggle);
+
+      const series = stack(dataset);
+
+      x.domain(d3.extent(allYears));
+      y.domain([
+        d3.min(series, layer => d3.min(layer, d => d[0])),
+        d3.max(series, layer => d3.max(layer, d => d[1]))
+      ]);
+
+      const area = d3.area()
+        .x((d, i) => x(dataset[i].year))
+        .y0(d => y(d[0]))
+        .y1(d => y(d[1]))
+        .curve(d3.curveBasis);
+
+      svg.selectAll("path")
+        .data(series)
+        .join("path")
+        .attr("fill", (_, i) => color(allKeywords[i]))
+        .attr("d", area)
+        .on("mousemove", function(event, d) {
+          const [xPos, yPos] = d3.pointer(event);
+          tooltip
+            .style("left", `${xPos + 20}px`)
+            .style("top", `${yPos + 20}px`)
+            .style("opacity", 1)
+            .text(allKeywords[series.indexOf(d)]);
+        })
+        .on("mouseleave", () => tooltip.style("opacity", 0));
+
+      svg.append("g")
+        .attr("transform", `translate(0, ${height - margin.bottom})`)
+        .call(d3.axisBottom(x).ticks(10).tickFormat(d3.format("d")));
+
+      drawLegend(allKeywords);
+    }
+
+    function drawLegend(keywords) {
+      const legend = d3.select("#legend");
+      legend.selectAll("div").remove();
+
+      keywords.forEach((kw, i) => {
+        const item = legend.append("div")
+          .attr("class", "legend-item");
+
+        item.append("div")
+          .attr("class", "legend-color")
+          .style("background-color", color(kw));
+
+        item.append("span").text(kw);
+      });
+    }
+  </script>
+</body>
+</html>
